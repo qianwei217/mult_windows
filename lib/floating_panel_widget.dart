@@ -70,18 +70,20 @@ class _FloatingPanelWidgetState extends State<FloatingPanelWidget> {
   Widget _buildPanelContent(BuildContext context) {
     return Material(
       elevation: 4.0 + (widget.panelModel.zIndex / 100),
+      // Use color on Material to make sure elevation shadow is based on this color
+      color: Theme.of(context).cardColor.withOpacity(0.95), // Semi-transparent card color
       borderRadius: BorderRadius.circular(8.0),
       child: Container(
         width: widget.panelModel.size.width,
         height: widget.panelModel.size.height,
-        decoration: BoxDecoration(
+        decoration: BoxDecoration( // This decoration is mostly for the border now
           borderRadius: BorderRadius.circular(8.0),
-          border: Border.all(color: Colors.blueGrey.shade400, width: 1),
-          color: Colors.white,
+          border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.5), width: 1),
+          // Color is set on Material widget above for better shadow rendering with transparency
         ),
         child: Column(
           children: [
-            // Custom Title Bar - This GestureDetector is for moving the panel around the Stack
+            // Custom Title Bar
             GestureDetector(
               onPanStart: (details) {
                 widget.panelManager.bringPanelToFront(widget.panelModel.id);
@@ -90,12 +92,14 @@ class _FloatingPanelWidgetState extends State<FloatingPanelWidget> {
                 Offset newOffset = widget.panelModel.offset + details.delta;
                 widget.panelManager.updatePanelPosition(widget.panelModel.id, newOffset);
               },
-              child: Container( // The actual title bar content
+              child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
                 decoration: BoxDecoration(
-                  color: Colors.blueGrey.shade100,
+                  // Slightly darker or more opaque for the title bar
+                  color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.85),
+
                   borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(7.0), // Match parent's border radius minus border width
+                    topLeft: Radius.circular(7.0),
                     topRight: Radius.circular(7.0),
                   ),
                 ),
@@ -105,15 +109,15 @@ class _FloatingPanelWidgetState extends State<FloatingPanelWidget> {
                     Expanded(
                       child: Text(
                         widget.panelModel.title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close, size: 18),
+                      icon: Icon(Icons.close, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       splashRadius: 18,
@@ -125,14 +129,17 @@ class _FloatingPanelWidgetState extends State<FloatingPanelWidget> {
                 ),
               ),
             ),
-            const Divider(height: 1, thickness: 1, color: Colors.blueGrey),
+            const Divider(height: 1, thickness: 1 /*color: Colors.blueGrey*/), // Color from theme
             // Content
             Expanded(
-              child: ClipRRect( // Ensure content respects rounded corners if it's flush
+              child: ClipRRect(
                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(7.0),
+                    bottomLeft: Radius.circular(7.0), // Adjusted to match Material's border
                     bottomRight: Radius.circular(7.0),
                   ),
+                // It's assumed that panelModel.contentWidget might need its own
+                // explicit background if it's transparent by default.
+                // For now, it will sit on the panel's semi-transparent background.
                 child: widget.panelModel.contentWidget,
               ),
             ),

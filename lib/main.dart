@@ -7,17 +7,33 @@ import 'package:provider/provider.dart';
 import 'tab_manager.dart'; // Keep
 import 'panel_manager.dart'; // ADDED
 import 'floating_panel_widget.dart'; // ADDED
+import 'package:window_manager/window_manager.dart'; // ADDED window_manager
 
 // void main(List<String> args) { // REVERTED to simple main
-void main() {
+Future<void> main() async { // Changed to Future<void> and async
   WidgetsFlutterBinding.ensureInitialized(); // Keep
+  await windowManager.ensureInitialized(); // ADDED window_manager initialization
 
-  // REMOVED: multi_window argument parsing logic
-  // if (args.firstOrNull == 'multi_window') { ... }
-  // else { ... }
+  // Configure the window
+  WindowOptions windowOptions = const WindowOptions(
+    size: Size(1200, 800), // Initial large size
+    center: true,
+    backgroundColor: Colors.transparent, // For Flutter view
+    skipTaskbar: false,
+    titleBarStyle: TitleBarStyle.hidden, // Crucial for frameless
+    windowButtonVisibility: false, // Hide macOS specific buttons
+  );
+
+  windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.setAsFrameless(); // Make it frameless
+    await windowManager.setBackgroundColor(Colors.transparent); // Ensure native window is transparent
+    // await windowManager.setFullScreen(true); // Alternative to setting large size
+    await windowManager.show();
+    await windowManager.focus();
+  });
 
   runApp(
-    MultiProvider( // CHANGED to MultiProvider
+    MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (context) => TabManager()),
         ChangeNotifierProvider(create: (context) => PanelManager()), // ADDED PanelManager
@@ -37,12 +53,15 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false, // Optional: hide debug banner
       title: 'Flutter Multi-Tab Demo',
       theme: ThemeData(
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const TabbedWindow(), // Always home to TabbedWindow now
+      // Important for transparency: MaterialApp's default background is white.
+      color: Colors.transparent, // Setting MaterialApp's color
+      home: const TabbedWindow(),
     );
   }
 }
@@ -57,15 +76,15 @@ class TabbedWindow extends StatefulWidget {
 class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late TabManager _tabManager;
-  late PanelManager _panelManager; // Added PanelManager instance variable
+  late PanelManager _panelManager;
 
-  final GlobalKey _stackKey = GlobalKey(); // Key for the Stack
+  final GlobalKey _stackKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
     _tabManager = Provider.of<TabManager>(context, listen: false);
-    _panelManager = Provider.of<PanelManager>(context, listen: false); // Initialize PanelManager
+    _panelManager = Provider.of<PanelManager>(context, listen: false);
     _tabController = TabController(length: _tabManager.tabs.length, vsync: this);
     _tabManager.addListener(_handleTabChange);
     _tabController.addListener(_handleTabSelection);
@@ -130,10 +149,21 @@ class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderSt
 
     // The main tabbed interface
     Widget tabbedInterface;
-    if (tabManager.tabs.isEmpty && panelManager.panels.isEmpty) { // Show empty state only if no tabs AND no panels
+    if (tabManager.tabs.isEmpty && panelManager.panels.isEmpty) {
       tabbedInterface = Scaffold(
-        appBar: AppBar(
-          title: const Text('Multi-Tab Browser (Empty)'),
+        backgroundColor: Colors.transparent,
+        appBar: PreferredSize( // Wrap AppBar in PreferredSize to make it a consistent height for GestureDetector
+          preferredSize: Size.fromHeight(kToolbarHeight),
+          child: GestureDetector(
+            onPanStart: (details) {
+              windowManager.startDragging();
+            },
+            child: AppBar(
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary.withOpacity(0.85),
+              elevation: 0,
+              title: const Text('Multi-Tab Browser (Empty)'),
+            ),
+          ),
         ),
         body: Center(
           child: ElevatedButton(
@@ -153,11 +183,22 @@ class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderSt
     } else if (tabManager.tabs.isEmpty && panelManager.panels.isNotEmpty) {
       // Has panels but no tabs in the main bar, show a minimal app bar
        tabbedInterface = Scaffold(
-        appBar: AppBar(
-          title: const Text('Multi-Tab Browser'),
+        backgroundColor: Colors.transparent,
+        appBar: PreferredSize(
+          preferredSize: Size.fromHeight(kToolbarHeight),
+          child: GestureDetector(
+            onPanStart: (details) {
+              windowManager.startDragging();
+            },
+            child: AppBar(
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary.withOpacity(0.85),
+              elevation: 0,
+              title: const Text('Multi-Tab Browser'),
+            ),
+          ),
         ),
-        body: Center(child: Text("All tabs are in floating panels.")), // Placeholder for when tabs are empty but panels exist
-        floatingActionButton: FloatingActionButton( // Still allow adding new tabs
+        body: Center(child: Text("All tabs are in floating panels.")),
+        floatingActionButton: FloatingActionButton(
           onPressed: () {
             tabManager.addNewTab();
           },
@@ -167,46 +208,54 @@ class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderSt
     }
     else {
       tabbedInterface = Scaffold(
-        appBar: AppBar(
-          title: const Text('Multi-Tab Browser'),
-          bottom: PreferredSize( // Wrap TabBar in PreferredSize for DragTarget
-            preferredSize: Size.fromHeight(kTextTabBarHeight),
-            child: DragTarget<String>( // String is panelId
+        backgroundColor: Colors.transparent,
+        appBar: PreferredSize( // Wrap AppBar for GestureDetector
+          preferredSize: Size.fromHeight(kToolbarHeight + ( _tabManager.tabs.isNotEmpty ? kTextTabBarHeight : 0)),
+          child: GestureDetector(
+            onPanStart: (details) {
+               // Only allow dragging if not interacting with TabBar or its elements.
+               // This is a simple check; more precise hit testing might be needed if there are interactive elements in AppBar title area.
+               // For now, assume dragging anywhere on AppBar (not TabBar part) moves the window.
+              if (details.localPosition.dy < kToolbarHeight) { // Check if drag started on main AppBar area
+                windowManager.startDragging();
+              }
+            },
+            child: AppBar(
+              backgroundColor: Theme.of(context).colorScheme.inversePrimary.withOpacity(0.85),
+              elevation: 0,
+              title: const Text('Multi-Tab Browser'),
+              bottom: _tabManager.tabs.isNotEmpty ? PreferredSize(
+                preferredSize: Size.fromHeight(kTextTabBarHeight),
+                child: DragTarget<String>(
               onWillAccept: (panelId) {
-                // You can add logic here to highlight the TabBar when a panel is dragged over it
-                return panelId != null && panelId.startsWith("panel_"); // Basic check
+                return panelId != null && panelId.startsWith("panel_");
               },
-              onAcceptWithDetails: (details) { // Changed from onAccept to onAcceptWithDetails
+              onAcceptWithDetails: (details) {
                 final panelId = details.data;
                 final mergeData = _panelManager.mergePanelToTabs(panelId);
                 if (mergeData != null) {
-                  // Check if a tab with the original ID already exists (e.g. user created new one with same name)
-                  // For simplicity, we'll try to use the original ID, but TabManager.addTab might
-                  // create a new one if the ID is taken or handle it based on its internal logic.
-                  // A more robust merge might involve checking if a tab with mergeData.originalTabId exists
-                  // and deciding whether to replace it or add as new.
                   _tabManager.addTab(
                     TabModel(
-                      id: mergeData.originalTabId, // Attempt to reuse original ID
+                      id: mergeData.originalTabId,
                       title: mergeData.title,
                       content: mergeData.contentWidget,
                     ),
                   );
-                  // Optionally, try to select the newly added tab
-                  // This requires finding its index after it's added.
-                  // int newTabIndex = _tabManager.tabs.indexWhere((t) => t.id == mergeData.originalTabId);
-                  // if (newTabIndex != -1) {
-                  //   _tabController.animateTo(newTabIndex);
-                  // }
                 }
               },
               builder: (context, candidateData, rejectedData) {
-                // Optionally change TabBar appearance when a panel is dragged over
                 return Container(
-                  color: candidateData.isNotEmpty ? Colors.blue.withOpacity(0.1) : null,
+                  // Use a color from the theme for the TabBar background
+                  color: candidateData.isNotEmpty
+                       ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.6)
+                       : Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.75),
                   child: TabBar(
                     controller: _tabController,
                     isScrollable: true,
+                    // Consider theming for TabBar indicator, label color for better visibility
+                    indicatorColor: Theme.of(context).colorScheme.primary,
+                    labelColor: Theme.of(context).colorScheme.primary,
+                    unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
                     tabs: tabManager.tabs.map((tabModel) {
                       Widget tabContent = Row(
                         mainAxisSize: MainAxisSize.min,
@@ -226,13 +275,14 @@ class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderSt
                         data: tabModel,
                         feedback: Material(
                           elevation: 4.0,
+                          color: Colors.transparent,
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
-                              color: Colors.blue.shade100,
+                              color: Theme.of(context).colorScheme.secondaryContainer.withOpacity(0.85),
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: Text(tabModel.title, style: Theme.of(context).textTheme.titleSmall),
+                            child: Text(tabModel.title, style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Theme.of(context).colorScheme.onSecondaryContainer)),
                           ),
                         ),
                         childWhenDragging: Opacity(
@@ -244,11 +294,12 @@ class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderSt
                           final double tabBarBottomY = appBar.preferredSize.height + kTextTabBarHeight + MediaQuery.of(context).padding.top;
 
                           if (details.offset.dy > tabBarBottomY + 20) {
-                            final RenderBox stackBox = _stackKey.currentContext?.findRenderObject() as RenderBox;
-                            final Offset localDropPosition = stackBox.globalToLocal(details.offset);
-
-                            _panelManager.detachTabToPanel(tabModel, localDropPosition);
-                            _tabManager.removeTabById(tabModel.id);
+                            final RenderBox? stackBox = _stackKey.currentContext?.findRenderObject() as RenderBox?;
+                            if (stackBox != null) {
+                              final Offset localDropPosition = stackBox.globalToLocal(details.offset);
+                              _panelManager.detachTabToPanel(tabModel, localDropPosition);
+                              _tabManager.removeTabById(tabModel.id);
+                            }
                           }
                         },
                         hapticFeedbackOnStart: true,
@@ -261,8 +312,10 @@ class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderSt
             ),
           ),
         ),
-      body: TabBarView(
-          controller: _tabController,
+      body: Container( // ADDED Container to provide a default background for TabBarView content
+          color: Theme.of(context).colorScheme.surface.withOpacity(0.8), // Semi-transparent surface
+          child: TabBarView(
+            controller: _tabController,
           children: tabManager.tabs.map((tabModel) => tabModel.content).toList(),
       ),
       floatingActionButton: FloatingActionButton(
