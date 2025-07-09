@@ -55,28 +55,24 @@ class TabManager with ChangeNotifier {
     notifyListeners();
   }
 
-  void removeTabById(String tabId, {bool preventEmptyRecreation = false}) {
-    final initialLength = _tabs.length;
+  void removeTabById(String tabId) { // Removed preventEmptyRecreation
     int removedAtIndex = _tabs.indexWhere((tab) => tab.id == tabId);
-
     if (removedAtIndex != -1) {
       _tabs.removeAt(removedAtIndex);
-      if (_tabs.isEmpty && !preventEmptyRecreation) {
-        // This was the behavior for simple close.
-        // For drag-out, preventEmptyRecreation should be true.
-        // addNewTab(); // This would re-add a tab. Let calling context decide.
-      }
+      // if (_tabs.isEmpty) {
+        // addNewTab(); // Logic for auto-adding is currently disabled.
+      // }
       notifyListeners();
     }
   }
 
   // Optional: remove tab by index, might be useful for TabController
-  void removeTabByIndex(int index, {bool preventEmptyRecreation = false}) {
+  void removeTabByIndex(int index) { // Removed preventEmptyRecreation
     if (index < 0 || index >= _tabs.length) return;
     _tabs.removeAt(index);
-    if (_tabs.isEmpty && !preventEmptyRecreation) {
-      // addNewTab();
-    }
+    // if (_tabs.isEmpty) {
+      // addNewTab(); // Logic for auto-adding is currently disabled.
+    // }
     notifyListeners();
   }
 }

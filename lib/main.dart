@@ -1,130 +1,38 @@
-import 'dart:convert';
+import 'dart:convert'; // Will likely remove if not used elsewhere after cleanup
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:desktop_multi_window/desktop_multi_window.dart';
-import 'package:collection/collection.dart'; // For args.firstOrNull
-import 'tab_manager.dart';
+// import 'package:desktop_multi_window/desktop_multi_window.dart'; // REMOVED
+// import 'package:collection/collection.dart'; // REMOVED - was for args.firstOrNull
 
-void main(List<String> args) {
-  // Ensure Flutter bindings are initialized
-  WidgetsFlutterBinding.ensureInitialized();
+import 'tab_manager.dart'; // Keep
+import 'panel_manager.dart'; // ADDED
+import 'floating_panel_widget.dart'; // ADDED
 
-  if (args.firstOrNull == 'multi_window') {
-    final windowId = int.parse(args[1]);
-    final arguments = args[2].isEmpty
-        ? <String, dynamic>{}
-        : jsonDecode(args[2]) as Map<String, dynamic>;
+// void main(List<String> args) { // REVERTED to simple main
+void main() {
+  WidgetsFlutterBinding.ensureInitialized(); // Keep
 
-    String tabId = arguments['tabId'] ?? 'unknown_tab';
-    String tabTitle = arguments['tabTitle'] ?? 'Detached Tab';
-    // In a real scenario, you might pass more complex data or an identifier
-    // to fetch the full content for the tab.
-    // For now, we'll just use the title.
+  // REMOVED: multi_window argument parsing logic
+  // if (args.firstOrNull == 'multi_window') { ... }
+  // else { ... }
 
-    runApp(DetachedTabApp(
-      windowController: WindowController.fromWindowId(windowId),
-      tabId: tabId,
-      tabTitle: tabTitle,
-      initialContentData: arguments['initialContentData'] // Example of passing more data
-    ));
-  } else {
-    runApp(
-      ChangeNotifierProvider(
-        create: (context) => TabManager(),
-        child: const MyApp(isMainWindow: true),
-      ),
-    );
-  }
+  runApp(
+    MultiProvider( // CHANGED to MultiProvider
+      providers: [
+        ChangeNotifierProvider(create: (context) => TabManager()),
+        ChangeNotifierProvider(create: (context) => PanelManager()), // ADDED PanelManager
+      ],
+      child: const MyApp(), // Simplified MyApp call
+    ),
+  );
 }
 
-// New App class for detached windows
-class DetachedTabApp extends StatelessWidget {
-  final WindowController windowController;
-  final String tabId;
-  final String tabTitle;
-  final dynamic initialContentData; // Placeholder for actual content
-
-  const DetachedTabApp({
-    super.key,
-    required this.windowController,
-    required this.tabId,
-    required this.tabTitle,
-    this.initialContentData,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Potentially, provide a simpler TabManager or specific state for this single window
-    return MaterialApp(
-      title: tabTitle,
-      theme: ThemeData(
-        primarySwatch: Colors.teal, // Different theme for detached?
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      home: DetachedTabWindowWidget(
-        windowController: windowController,
-        tabId: tabId,
-        tabTitle: tabTitle,
-        initialContent: Center(child: Text('Content for $tabTitle (ID: ${tabId.substring(tabId.length - 4)})')),
-      ),
-    );
-  }
-}
-
-// Widget for the content of the detached tab window
-class DetachedTabWindowWidget extends StatelessWidget {
-  final WindowController windowController;
-  final String tabId;
-  final String tabTitle;
-  final Widget initialContent;
-
-  const DetachedTabWindowWidget({
-    super.key,
-    required this.windowController,
-    required this.tabId,
-    required this.tabTitle,
-    required this.initialContent,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(tabTitle),
-        leading: IconButton( // Example: Add a button to signal merge
-          icon: Icon(Icons.merge_type),
-          onPressed: () async {
-            // Send data back to main window (windowId 0)
-            // This is a placeholder for the "drag window to merge" step
-            if (WindowController.fromWindowId(0) != null) {
-               DesktopMultiWindow.invokeMethod(
-                0, // Assuming 0 is the main window ID
-                "mergeTab",
-                jsonEncode({'tabId': tabId, 'tabTitle': tabTitle, /* other data */}),
-              );
-              // Optionally close this window after sending
-              // windowController.close();
-            }
-          },
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () {
-              windowController.close();
-            },
-          )
-        ],
-      ),
-      body: initialContent, // Display the passed content
-    );
-  }
-}
-
+// REMOVED: DetachedTabApp class
+// REMOVED: DetachedTabWindowWidget class
 
 class MyApp extends StatelessWidget {
-  final bool isMainWindow;
-  const MyApp({super.key, this.isMainWindow = false});
+  // REMOVED: isMainWindow parameter
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -134,8 +42,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: isMainWindow ? const TabbedWindow() : null, // Main window gets TabbedWindow
-      // If not main window, the specific DetachedTabApp will be run directly by main()
+      home: const TabbedWindow(), // Always home to TabbedWindow now
     );
   }
 }
@@ -150,56 +57,34 @@ class TabbedWindow extends StatefulWidget {
 class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late TabManager _tabManager;
+  late PanelManager _panelManager; // Added PanelManager instance variable
+
+  final GlobalKey _stackKey = GlobalKey(); // Key for the Stack
 
   @override
   void initState() {
     super.initState();
     _tabManager = Provider.of<TabManager>(context, listen: false);
+    _panelManager = Provider.of<PanelManager>(context, listen: false); // Initialize PanelManager
     _tabController = TabController(length: _tabManager.tabs.length, vsync: this);
     _tabManager.addListener(_handleTabChange);
     _tabController.addListener(_handleTabSelection);
 
-    // Listener for messages from other windows (e.g., for merging)
-    DesktopMultiWindow.setMethodCallHandler(_handleMethodCall);
+    // REMOVED: DesktopMultiWindow.setMethodCallHandler(_handleMethodCall);
   }
 
-  Future<dynamic> _handleMethodCall(MethodCall call, int fromWindowId) async {
-    if (call.method == "mergeTab") {
-      final args = jsonDecode(call.arguments) as Map<String, dynamic>;
-      final tabId = args['tabId'] as String;
-      final tabTitle = args['tabTitle'] as String;
-
-      // Check if tab with this ID already exists (e.g. if user didn't close the original)
-      // For now, let's assume we always add it as new, or replace if ID exists.
-      // A more robust solution would be needed for perfect state sync.
-      print('Main window received merge request for tab: $tabTitle (ID: $tabId) from window $fromWindowId');
-
-      // Potentially close the source window
-      // final fromWindow = WindowController.fromWindowId(fromWindowId);
-      // fromWindow?.close();
-
-
-      // Add it as a new tab
-      _tabManager.addTab(TabModel(
-          id: tabId, // Reuse ID or generate new? For now, reuse.
-          title: tabTitle,
-          content: Center(child: Text('Content for $tabTitle (ID: ${tabId.substring(tabId.length-4)}) - Merged'))
-      ));
-      return "Merge request processed";
-    }
-    return Future.value(null);
-  }
+  // REMOVED: _handleMethodCall Future<dynamic> _handleMethodCall(...)
 
   void _handleTabChange() {
     if (!mounted) return;
 
     final newTabCount = _tabManager.tabs.length;
-    if (newTabCount == 0 && _tabController.length > 0) { // All tabs closed
+    if (newTabCount == 0 && _tabController.length > 0) {
         _tabController.removeListener(_handleTabSelection);
         _tabController.dispose();
-        _tabController = TabController(length: 0, vsync: this); // Empty controller
+        _tabController = TabController(length: 0, vsync: this);
         _tabController.addListener(_handleTabSelection);
-        setState(() {}); // Update UI to show empty state
+        setState(() {});
         return;
     }
 
@@ -232,40 +117,23 @@ class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderSt
     _tabManager.removeListener(_handleTabChange);
     _tabController.removeListener(_handleTabSelection);
     _tabController.dispose();
-    DesktopMultiWindow.setMethodCallHandler(null); // Clear handler
+    // REMOVED: DesktopMultiWindow.setMethodCallHandler(null);
     super.dispose();
   }
 
-  void _onTabDraggedOut(TabModel tabModel) async {
-    print("Tab dragged out: ${tabModel.title}");
-
-    // 1. Create new window
-    final newWindow = await DesktopMultiWindow.createWindow(jsonEncode({
-      'tabId': tabModel.id,
-      'tabTitle': tabModel.title,
-      // 'initialContentData': ... // serialize tabModel.content if needed, or reconstruct in sub-window
-    }));
-
-    newWindow
-      ..setFrame(const Offset(100, 100) & const Size(800, 600)) // Example position & size
-      ..setTitle(tabModel.title)
-      ..show();
-
-    // 2. Remove tab from this window
-    // Important: Ensure this doesn't trigger unwanted index changes before new window is ready
-    // Consider a slight delay or ensure TabManager handles empty state gracefully
-    _tabManager.removeTabById(tabModel.id, preventEmptyRecreation: true);
-  }
-
+  // REMOVED: _onTabDraggedOut method that used DesktopMultiWindow
 
   @override
   Widget build(BuildContext context) {
     final tabManager = Provider.of<TabManager>(context);
+    final panelManager = Provider.of<PanelManager>(context); // Get PanelManager
 
-    if (tabManager.tabs.isEmpty) {
-      return Scaffold(
+    // The main tabbed interface
+    Widget tabbedInterface;
+    if (tabManager.tabs.isEmpty && panelManager.panels.isEmpty) { // Show empty state only if no tabs AND no panels
+      tabbedInterface = Scaffold(
         appBar: AppBar(
-          title: const Text('Multi-Tab Browser'),
+          title: const Text('Multi-Tab Browser (Empty)'),
         ),
         body: Center(
           child: ElevatedButton(
@@ -275,7 +143,21 @@ class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderSt
             child: const Text('Add First Tab'),
           ),
         ),
-         floatingActionButton: FloatingActionButton(
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            tabManager.addNewTab();
+          },
+          child: const Icon(Icons.add),
+        ),
+      );
+    } else if (tabManager.tabs.isEmpty && panelManager.panels.isNotEmpty) {
+      // Has panels but no tabs in the main bar, show a minimal app bar
+       tabbedInterface = Scaffold(
+        appBar: AppBar(
+          title: const Text('Multi-Tab Browser'),
+        ),
+        body: Center(child: Text("All tabs are in floating panels.")), // Placeholder for when tabs are empty but panels exist
+        floatingActionButton: FloatingActionButton( // Still allow adding new tabs
           onPressed: () {
             tabManager.addNewTab();
           },
@@ -283,69 +165,107 @@ class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderSt
         ),
       );
     }
+    else {
+      tabbedInterface = Scaffold(
+        appBar: AppBar(
+          title: const Text('Multi-Tab Browser'),
+          bottom: PreferredSize( // Wrap TabBar in PreferredSize for DragTarget
+            preferredSize: Size.fromHeight(kTextTabBarHeight),
+            child: DragTarget<String>( // String is panelId
+              onWillAccept: (panelId) {
+                // You can add logic here to highlight the TabBar when a panel is dragged over it
+                return panelId != null && panelId.startsWith("panel_"); // Basic check
+              },
+              onAcceptWithDetails: (details) { // Changed from onAccept to onAcceptWithDetails
+                final panelId = details.data;
+                final mergeData = _panelManager.mergePanelToTabs(panelId);
+                if (mergeData != null) {
+                  // Check if a tab with the original ID already exists (e.g. user created new one with same name)
+                  // For simplicity, we'll try to use the original ID, but TabManager.addTab might
+                  // create a new one if the ID is taken or handle it based on its internal logic.
+                  // A more robust merge might involve checking if a tab with mergeData.originalTabId exists
+                  // and deciding whether to replace it or add as new.
+                  _tabManager.addTab(
+                    TabModel(
+                      id: mergeData.originalTabId, // Attempt to reuse original ID
+                      title: mergeData.title,
+                      content: mergeData.contentWidget,
+                    ),
+                  );
+                  // Optionally, try to select the newly added tab
+                  // This requires finding its index after it's added.
+                  // int newTabIndex = _tabManager.tabs.indexWhere((t) => t.id == mergeData.originalTabId);
+                  // if (newTabIndex != -1) {
+                  //   _tabController.animateTo(newTabIndex);
+                  // }
+                }
+              },
+              builder: (context, candidateData, rejectedData) {
+                // Optionally change TabBar appearance when a panel is dragged over
+                return Container(
+                  color: candidateData.isNotEmpty ? Colors.blue.withOpacity(0.1) : null,
+                  child: TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    tabs: tabManager.tabs.map((tabModel) {
+                      Widget tabContent = Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(tabModel.title),
+                          const SizedBox(width: 8),
+                          InkWell(
+                            onTap: () {
+                              tabManager.removeTabById(tabModel.id);
+                            },
+                            child: const Icon(Icons.close, size: 16),
+                          ),
+                        ],
+                      );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Multi-Tab Browser'),
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabs: tabManager.tabs.map((tabModel) {
-            Widget tabContent = Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(tabModel.title),
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: () {
-                    int tabIndexToRemove = tabManager.tabs.indexWhere((t) => t.id == tabModel.id);
-                    if (tabIndexToRemove != -1) {
-                       // Default behavior for close button: allow recreation if it's the last tab and manager is configured to do so.
-                       // If we want the window to close when the last tab is closed by its button,
-                       // this logic and TabManager's would need adjustment.
-                       // For now, it might recreate a new "Tab 1" if this was the last tab.
-                       _tabManager.removeTabById(tabModel.id, preventEmptyRecreation: false);
-                    }
-                  },
-                  child: const Icon(Icons.close, size: 16),
-                ),
-              ],
-            );
+                      return LongPressDraggable<TabModel>(
+                        data: tabModel,
+                        feedback: Material(
+                          elevation: 4.0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade100,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(tabModel.title, style: Theme.of(context).textTheme.titleSmall),
+                          ),
+                        ),
+                        childWhenDragging: Opacity(
+                          opacity: 0.3,
+                          child: Tab(child: tabContent),
+                        ),
+                        onDragEnd: (details) {
+                          final appBar = AppBar();
+                          final double tabBarBottomY = appBar.preferredSize.height + kTextTabBarHeight + MediaQuery.of(context).padding.top;
 
-            return Draggable<TabModel>(
-              data: tabModel,
-              feedback: Material( // Material needed for text style during drag
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(4),
+                          if (details.offset.dy > tabBarBottomY + 20) {
+                            final RenderBox stackBox = _stackKey.currentContext?.findRenderObject() as RenderBox;
+                            final Offset localDropPosition = stackBox.globalToLocal(details.offset);
+
+                            _panelManager.detachTabToPanel(tabModel, localDropPosition);
+                            _tabManager.removeTabById(tabModel.id);
+                          }
+                        },
+                        hapticFeedbackOnStart: true,
+                        child: Tab(key: ValueKey(tabModel.id), child: tabContent),
+                      );
+                    }).toList(),
                   ),
-                  child: Text(tabModel.title, style: Theme.of(context).textTheme.bodyLarge),
-                ),
-              ),
-              childWhenDragging: Opacity( // How the tab looks in the bar while dragging
-                opacity: 0.5,
-                child: Tab(child: tabContent),
-              ),
-              onDraggableCanceled: (velocity, offset) {
-                // This is called if the draggable is not accepted by any DragTarget.
-                // We assume this means it was dragged "out".
-                _onTabDraggedOut(tabModel);
+                );
               },
-              onDragEnd: (details) {
-                // onDragEnd is called regardless of whether it was accepted or cancelled.
-                // If accepted by a DragTarget, details.wasAccepted will be true.
-                // If not (e.g. dropped outside, or no target), it's effectively a cancel.
-                // Using onDraggableCanceled is more specific for our "drag out" case.
-              },
-              child: Tab(child: tabContent),
-            );
-          }).toList(),
+            ),
+          ),
         ),
-      ),
       body: TabBarView(
-        controller: _tabController,
+          controller: _tabController,
+          children: tabManager.tabs.map((tabModel) => tabModel.content).toList(),
+      ),
+      floatingActionButton: FloatingActionButton(
         children: tabManager.tabs.map((tabModel) => tabModel.content).toList(),
       ),
       floatingActionButton: FloatingActionButton(
@@ -354,6 +274,27 @@ class _TabbedWindowState extends State<TabbedWindow> with SingleTickerProviderSt
         },
         child: const Icon(Icons.add),
       ),
+    );
+    }
+
+    return Stack( // Assign the key to the Stack
+      key: _stackKey,
+      children: [
+        tabbedInterface,
+        // Render panels on top
+        ...panelManager.panels.map((panel) {
+          // Now use the actual FloatingPanelWidget
+          return Positioned(
+            key: Key(panel.id), // Use panel ID as key for widget identity
+            left: panel.offset.dx,
+            top: panel.offset.dy,
+            child: FloatingPanelWidget(
+              panelModel: panel,
+              panelManager: panelManager,
+            ),
+          );
+        }).toList(),
+      ],
     );
   }
 }
